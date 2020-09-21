@@ -1,22 +1,28 @@
 import paint from './Painter.js';
 import Tube from './Tube.js';
+import "core-js/stable";
+import "regenerator-runtime/runtime";
 
 const settings = {
     frameDelay: 40,
-    timeout: 25,
+    timeout: 40,
 };
 
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 class Game {
-    constructor(players, ctx, after) {
+    constructor(players, ctx) {
         this.world = {
             players,
             tubes: [new Tube()],
         };
         this.ctx = ctx;
         this.counter = 0;
-        this.lastPlayer = null;
-        this.after = after;
         this.score = 0;
+        this.timeLife = 0;
+        this.deadPlayers = [];
     }
 
     getWorld() {
@@ -39,12 +45,7 @@ class Game {
         return false;
     }
 
-    stop() {
-        window.clearInterval(this.handler);
-        this.after(this.lastPlayer);
-    }
-
-    start() {
+    async start() {
         const live = () => {
             const nextTube = this.world.tubes[0];
             for (let tube of this.world.tubes) {
@@ -53,12 +54,13 @@ class Game {
             for (let playerIdx in this.world.players) {
                 const player = this.world.players[playerIdx];
                 player.dx = nextTube.x - player.x;
-                player.dy = nextTube.y - player.y;
+                player.dyUp = nextTube.y - nextTube.size / 2 - player.y;
+                player.dyDown = nextTube.y + nextTube.size / 2 - player.y;
                 player.live();
                 const dead = this.checkCollision(player);
                 if (dead) {
                     this.world.players.splice(playerIdx, 1);
-                    this.lastPlayer = player;
+                    this.deadPlayers.push({score: this.score, player});
                 }
             }
             if (this.ctx !== undefined) {
@@ -69,15 +71,23 @@ class Game {
                 this.counter = 0;
                 this.world.tubes.push(new Tube());
             }
-            if (this.world.tubes.length > 0 && this.world.tubes[0].x < 180) {
+            if (this.world.tubes.length > 0 && this.world.tubes[0].x < 80) {
                 this.world.tubes.shift();
                 this.score += 1;
             }
-            if (this.world.players.length === 0) {
-                this.stop();
+            this.timeLife += 1;
+        }
+        while(this.world.players.length > 0) {
+            live();
+            if (this.ctx !== undefined) {
+                await sleep(settings.frameDelay);
             }
         }
-        this.handler = window.setInterval(live, settings.frameDelay);
+        return {
+            deadPlayers: this.deadPlayers,
+            score: this.score,
+            timeLife: this.timeLife,
+        };
     }
 }
 

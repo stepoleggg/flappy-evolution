@@ -7,48 +7,98 @@ import Setting from './Setting.js';
 const ctx = document.getElementById('root').getContext('2d');
 ctx.fillRect(0,0,500,500);
 
-const numberAIs = 200;
+const numberAIs = 100;
 const numberGenerations = 1000;
-let passed = 0;
+const needScore = 100;
 
-let ais = [];
-
-function learn(player) {
-    let bestAI;
-    if (player === undefined) {
-        for (let i = 0; i < numberAIs; i++) {
-            ais.push(new AI());
-        }
-    } else {
-        bestAI = player.ai;
-        ais = []
-        ais.push(bestAI);
-        for (let i = 0; i < numberAIs - 1; i++) {
-            const ai = new AI(bestAI);
-            ai.mutate();
-            ais.push(ai);
+const generateAIs = (deadPlayers) => {
+    let sumScore = 0;
+    const probabilities = [];
+    for (let deadIdx in deadPlayers) {
+        const timeScore = deadPlayers[deadIdx].timeLife + 1;
+        sumScore += timeScore;
+        probabilities[deadIdx] = timeScore;
+    }
+    for (let probabilitiesIdx in probabilities) {
+        probabilities[probabilitiesIdx] /= sumScore;
+        if (probabilitiesIdx !== 0) {
+            probabilities[probabilitiesIdx] += probabilities[probabilitiesIdx - 1];
         }
     }
-    
-    passed += 1;
-    if (passed > numberGenerations) {
-        console.log('ended');
-        console.log(bestAI);
-        return;
-    }
-    document.getElementById('generation').innerHTML = `Поколение: ${passed}/${numberGenerations}<br>Кол-во особей: ${numberAIs}`;
-
-    const players = [];
+    const ais = [];
     for (let i = 0; i < numberAIs; i++) {
-        players.push(new Player(ais[i]));
+        const rand = Math.random();
+        let aiIdx = 0;
+        while(probabilities[aiIdx] < rand) {
+            aiIdx += 1;
+        }
+        const ai = new AI(deadPlayers[aiIdx].player.ai);
+        ai.mutate(1 / (deadPlayers[aiIdx].score + 1));
+        ais.push(ai);
     }
-    const game = new Game(players, ctx, learn);
-    game.start();
+    return ais;
+};
+
+const copyAIs = (deadPlayers) => {
+    const ais = [];
+    for (let i = 0; i < numberAIs; i++) {
+        const dead = deadPlayers[deadPlayers.length - 1];
+        const ai = new AI(dead.player.ai);
+        ai.mutate(1 / (dead.score + 1));
+        ais.push(ai);
+    }
+    return ais;
 }
 
-function test(player) {
-    const game = new Game([new Player(player.ai)], ctx, test);
-    game.start();
+async function learn(numberAIs, numberGenerations, needScore) {
+    let passed = 0;
+    let bestScore = 0;
+    let bestAI;
+    let ais = [];
+    for (let i = 0; i < numberAIs; i++) {
+        ais.push(new AI());
+    }
+    while(passed < numberGenerations && bestScore < needScore) {
+        const players = [];
+        for (let i = 0; i < numberAIs; i++) {
+            players.push(new Player(ais[i]));
+        }
+        const game = new Game(players, ctx);
+        const result = await game.start();
+        const { deadPlayers, score } = result;
+        if (score > bestScore) {
+            bestScore = score;
+        }
+        ais = copyAIs(deadPlayers);
+        passed += 1;
+        document.getElementById('generation').innerHTML = `
+            Поколение: ${passed}/${numberGenerations}<br>
+            Кол-во особей: ${numberAIs}<br>
+            Лучший результат: ${bestScore}/${needScore}`;
+        bestAI = deadPlayers[deadPlayers.length - 1].player.ai;
+    }
+    return bestAI;
+}
+
+let testScoreSum = 0;
+let testBestScore = 0;
+let testGamesNum = 0;
+async function test() {
+    const bestAI = await learn(numberAIs, numberGenerations, needScore);
+    while(true) {
+        const game = new Game([new Player(bestAI)], ctx);
+        const result = await game.start();
+        if (result.score  > testBestScore) {
+            testBestScore = result.score;
+        }
+        testGamesNum += 1;
+        testScoreSum += result.score;
+        document.getElementById('testing').innerHTML = `
+            Обучено: ${JSON.stringify(bestAI)}<br>
+            Лучший тестовый результат: ${testBestScore}<br>
+            Тестовых игр: ${testGamesNum}<br>
+            Средный тестовый результат: ${testScoreSum / testGamesNum}`;
+    }
 }
 
 const inputsRealtime = [];
@@ -64,6 +114,6 @@ document.getElementById('apply').onclick = () => {
     }
 }
 
-learn();
+test();
 
 // test(new Player(100, bestAI));

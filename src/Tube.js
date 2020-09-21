@@ -1,5 +1,5 @@
 const holeSize = 150;
-const holeWidth = 50;
+const holeWidth = 40;
 const speed = 10;
 
 class Tube {
